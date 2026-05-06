@@ -121,7 +121,7 @@ def render():
         full_records = get_all_patients_full()
         full_records = [r for r in full_records if r["PatNum"] in selected]
         log_audit("INGEST", None, {"ingested_ids": selected, "count": len(selected)})
-        output = ingest_handler(full_records)
+        ingest_handler(full_records)
         delete_patients_by_ids(selected)
         st.success(f"Successfully ingested and removed {len(full_records)} patient(s).")
         # with st.expander("JSON sent to ingest module", expanded=True):

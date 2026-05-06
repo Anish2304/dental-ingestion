@@ -2,6 +2,11 @@ import json
 import os
 from playwright.sync_api import sync_playwright
 from config import FRONTEND_URL
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
 def _fill_patient_form(page, p: dict):
@@ -46,7 +51,5 @@ def _inject_into_ui(records: list[dict]):
         browser.close()
 
 
-def ingest_handler(records: list[dict]) -> str:
-    output = json.dumps(records, indent=2)
+def ingest_handler(records: list[dict]) -> None:
     _inject_into_ui(records)
-    return output
