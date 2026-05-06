@@ -1,4 +1,5 @@
 import json
+import os
 from playwright.sync_api import sync_playwright
 from config import FRONTEND_URL
 
@@ -36,6 +37,7 @@ def _inject_into_ui(records: list[dict]):
         browser = p.chromium.launch(headless=True, slow_mo=50)
         page = browser.new_context().new_page()
         page.goto(FRONTEND_URL)
+        # page.goto(f"file:///{os.path.abspath('frontend.html')}")
         page.get_by_role("button", name="+ Add New Patient").wait_for(state="visible")
 
         for record in records:
@@ -46,5 +48,5 @@ def _inject_into_ui(records: list[dict]):
 
 def ingest_handler(records: list[dict]) -> str:
     output = json.dumps(records, indent=2)
-    # _inject_into_ui(records)
+    _inject_into_ui(records)
     return output

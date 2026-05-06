@@ -3,6 +3,7 @@ from services.api_client import fetch_patient
 from db.crud import create_patient, check_patient_exists
 
 
+
 def _do_lookup(i: int):
     fname = st.session_state.get(f"fname_{i}", "").strip()
     lname = st.session_state.get(f"lname_{i}", "").strip()
@@ -19,7 +20,7 @@ def _do_lookup(i: int):
         phone = existing.get("HmPhone")   or "—"
         st.session_state.lookup_rows[i]["status"]  = "exists"
         st.session_state.lookup_rows[i]["message"] = (
-            f"Patient **{existing['FName']} {existing['LName']}** already exists in the database "
+            f"Patient **{existing['FName']} {existing['LName']}** already exists "
             f"(ID: {existing['PatNum']}, DOB: {dob}, Phone: {phone})."
         )
         return
@@ -58,6 +59,10 @@ def _do_lookup(i: int):
         billing_type  = patient_data.get("BillingType", "Standard Account"),
     )
 
+    if "session_pat_nums" not in st.session_state:
+        st.session_state.session_pat_nums = []
+    st.session_state.session_pat_nums.append(record["PatNum"])
+
     st.session_state.lookup_rows[i]["status"]  = "saved"
     st.session_state.lookup_rows[i]["message"] = (
         f"Saved — **{record['FName']} {record['LName']}** (Patient ID: {record['PatNum']})"
@@ -65,14 +70,18 @@ def _do_lookup(i: int):
 
 
 def render():
+    # ── Header — matches HTML .page-title ──────────────────────────────────────
     st.markdown(
         """
-        <div style="padding: 1.5rem 0 0.5rem 0;">
-            <h1 style="margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: -0.5px;">
-                Docudent Ingestion Interface
+        <div style="margin-bottom:20px;">
+            <h1 style="font-size:21px;font-weight:700;color:#111827;
+                       margin:0 0 5px;font-family:'DM Sans',sans-serif;">
+                Patient Import
             </h1>
-            <p style="margin: 0.25rem 0 0 0; color: grey; font-size: 0.95rem;">
-                Look up patients via the OpenDental API and save their records for ingestion. Existing patients will be flagged automatically.
+            <p style="font-size:13px;color:#6b7280;margin:0;
+                      font-family:'DM Sans',sans-serif;">
+                Look up patients via the OpenDental API and save their records for ingestion.
+                Existing patients will be flagged automatically.
             </p>
         </div>
         """,
@@ -80,15 +89,37 @@ def render():
     )
     st.markdown("---")
 
+    # ── Section label ───────────────────────────────────────────────────────────
+    st.markdown(
+        "<p style='font-size:12px;font-weight:600;color:#6b7280;"
+        "text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;"
+        "font-family:\"DM Sans\",sans-serif;'>Patient Lookup</p>",
+        unsafe_allow_html=True,
+    )
+    st.caption("First Name and Last Name are required. SSN is optional.")
+
     if "lookup_rows" not in st.session_state:
         st.session_state.lookup_rows = [{"status": None, "message": ""}]
 
-    # Column headers
-    h1, h2, h3, h4 = st.columns([3, 3, 2, 1.2])
-    h1.markdown("**First Name** *")
-    h2.markdown("**Last Name** *")
-    h3.markdown("**SSN**")
+    # ── Column headers ──────────────────────────────────────────────────────────
+    h1, h2, h3, _ = st.columns([3, 3, 2, 1.2])
+    h1.markdown(
+        "<p style='font-size:11.5px;font-weight:600;color:#6b7280;"
+        "font-family:\"DM Sans\",sans-serif;margin:0;'>First Name *</p>",
+        unsafe_allow_html=True,
+    )
+    h2.markdown(
+        "<p style='font-size:11.5px;font-weight:600;color:#6b7280;"
+        "font-family:\"DM Sans\",sans-serif;margin:0;'>Last Name *</p>",
+        unsafe_allow_html=True,
+    )
+    h3.markdown(
+        "<p style='font-size:11.5px;font-weight:600;color:#6b7280;"
+        "font-family:\"DM Sans\",sans-serif;margin:0;'>SSN</p>",
+        unsafe_allow_html=True,
+    )
 
+    # ── Rows ────────────────────────────────────────────────────────────────────
     for i, row in enumerate(st.session_state.lookup_rows):
         c1, c2, c3, c4 = st.columns([3, 3, 2, 1.2])
         c1.text_input("First Name", key=f"fname_{i}", label_visibility="collapsed", placeholder="John")
@@ -98,24 +129,28 @@ def render():
         if c4.button("Look Up", key=f"lookup_{i}", use_container_width=True):
             _do_lookup(i)
 
-        if row["status"] == "saved":
-            st.success(row["message"])
-        elif row["status"] == "exists":
+        status = row["status"]
+        if status == "saved":
+            st.markdown(
+                "<p style='font-size:12px;color:#10b981;margin:2px 0 4px;"
+                "font-family:\"DM Sans\",sans-serif;'>&#10003; Saved successfully</p>",
+                unsafe_allow_html=True,
+            )
+        elif status in ("exists", "not_found"):
             st.warning(row["message"])
-        elif row["status"] == "error":
+        elif status == "error":
             st.error(row["message"])
-        elif row["status"] == "not_found":
-            st.warning(row["message"])
 
+    # ── Add row ─────────────────────────────────────────────────────────────────
     st.markdown("")
     if st.button("+ Add Patient"):
         st.session_state.lookup_rows.append({"status": None, "message": ""})
         st.rerun()
 
-    # ── Navigation ────────────────────────────────────────────────────────────
+    # ── Navigation ──────────────────────────────────────────────────────────────
     st.markdown("---")
-    ncol1, ncol2 = st.columns([3, 1])
-    with ncol2:
+    _, nav_col = st.columns([3, 1])
+    with nav_col:
         if st.button("View Export →", type="secondary", use_container_width=True):
             st.session_state.page = "export"
             st.rerun()

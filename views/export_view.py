@@ -97,12 +97,12 @@ def render():
     st.markdown("---")
 
     selected = sorted(st.session_state.checked_ids)
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total in Database", total if records else 0)
-    m2.metric("Selected for Ingest", len(selected))
-    m3.metric("Page", f"{st.session_state.export_page} / {total_pages}")
+    # m1, m2, m3 = st.columns(3)
+    # m1.metric("Total in Database", total if records else 0)
+    # m2.metric("Selected for Ingest", len(selected))
+    # m3.metric("Page", f"{st.session_state.export_page} / {total_pages}")
 
-    st.markdown("")
+    # st.markdown("")
 
     bc1, bc2 = st.columns([3, 1])
     with bc1:
@@ -124,8 +124,8 @@ def render():
         output = ingest_handler(full_records)
         delete_patients_by_ids(selected)
         st.success(f"Successfully ingested and removed {len(full_records)} patient(s).")
-        with st.expander("JSON sent to ingest module", expanded=True):
-            st.code(output, language="json")
+        # with st.expander("JSON sent to ingest module", expanded=True):
+        #     st.code(output, language="json")
         st.session_state.checked_ids.clear()
         st.session_state.export_page = 1
 
