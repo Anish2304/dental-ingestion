@@ -1,10 +1,70 @@
 import streamlit as st
 from api_client import fetch_patient
-from db.crud import create_patient
+from db.crud import create_patient, check_patient_exists
+
+
+def _do_lookup(i: int):
+    fname = st.session_state.get(f"fname_{i}", "").strip()
+    lname = st.session_state.get(f"lname_{i}", "").strip()
+    ssn   = st.session_state.get(f"ssn_{i}",   "").strip()
+
+    if not fname or not lname:
+        st.session_state.lookup_rows[i]["status"]  = "error"
+        st.session_state.lookup_rows[i]["message"] = "First and Last Name are required."
+        return
+
+    existing = check_patient_exists(fname, lname)
+    if existing:
+        dob   = existing.get("Birthdate") or "—"
+        phone = existing.get("HmPhone")   or "—"
+        st.session_state.lookup_rows[i]["status"]  = "exists"
+        st.session_state.lookup_rows[i]["message"] = (
+            f"Patient **{existing['FName']} {existing['LName']}** already exists in the database "
+            f"(ID: {existing['PatNum']}, DOB: {dob}, Phone: {phone})."
+        )
+        return
+
+    try:
+        results = fetch_patient(fname, lname)
+    except Exception as e:
+        st.session_state.lookup_rows[i]["status"]  = "error"
+        st.session_state.lookup_rows[i]["message"] = f"API error: {e}"
+        return
+
+    if not results:
+        st.session_state.lookup_rows[i]["status"]  = "not_found"
+        st.session_state.lookup_rows[i]["message"] = f"No patient found for {fname} {lname}."
+        return
+
+    patient_data = results[0]
+    if not patient_data.get("SSN") and ssn:
+        patient_data["SSN"] = ssn
+
+    record = create_patient(
+        pat_num       = patient_data.get("PatNum", ""),
+        fname         = patient_data.get("FName", fname),
+        lname         = patient_data.get("LName", lname),
+        ssn           = patient_data.get("SSN", ssn),
+        middle_i      = patient_data.get("MiddleI", ""),
+        birthdate     = patient_data.get("Birthdate", ""),
+        hm_phone      = patient_data.get("HmPhone", ""),
+        address       = patient_data.get("Address", ""),
+        city          = patient_data.get("City", ""),
+        state         = patient_data.get("State", ""),
+        zip_code      = patient_data.get("Zip", ""),
+        email         = patient_data.get("Email", ""),
+        pri_prov_abbr = patient_data.get("priProvAbbr", ""),
+        pat_status    = patient_data.get("PatStatus", "Patient"),
+        billing_type  = patient_data.get("BillingType", "Standard Account"),
+    )
+
+    st.session_state.lookup_rows[i]["status"]  = "saved"
+    st.session_state.lookup_rows[i]["message"] = (
+        f"Saved — **{record['FName']} {record['LName']}** (Patient ID: {record['PatNum']})"
+    )
 
 
 def render():
-    # ── Header ───────────────────────────────────────────────────────────────
     st.markdown(
         """
         <div style="padding: 1.5rem 0 0.5rem 0;">
@@ -12,7 +72,7 @@ def render():
                 Docudent Ingestion Interface
             </h1>
             <p style="margin: 0.25rem 0 0 0; color: grey; font-size: 0.95rem;">
-                Look up a patient via the OpenDental API and save their record for ingestion.
+                Look up patients via the OpenDental API and save their records for ingestion. Existing patients will be flagged automatically.
             </p>
         </div>
         """,
@@ -20,82 +80,37 @@ def render():
     )
     st.markdown("---")
 
-    # ── Form ─────────────────────────────────────────────────────────────────
-    st.markdown("##### Patient Lookup")
-    st.caption("First Name and Last Name are required. SSN is optional.")
+    if "lookup_rows" not in st.session_state:
+        st.session_state.lookup_rows = [{"status": None, "message": ""}]
 
-    with st.form("lookup_form", clear_on_submit=False):
-        col1, col2, col3 = st.columns([3, 3, 2])
-        fname = col1.text_input("First Name *")
-        lname = col2.text_input("Last Name *")
-        ssn   = col3.text_input("SSN", placeholder="XXX-XX-XXXX")
-        submitted = st.form_submit_button("Look Up Patient", type="primary", use_container_width=True)
+    # Column headers
+    h1, h2, h3, h4 = st.columns([3, 3, 2, 1.2])
+    h1.markdown("**First Name** *")
+    h2.markdown("**Last Name** *")
+    h3.markdown("**SSN**")
 
-    # ── Lookup & save ─────────────────────────────────────────────────────────
-    if submitted:
-        errors = []
-        if not fname.strip():
-            errors.append("First Name is required.")
-        if not lname.strip():
-            errors.append("Last Name is required.")
+    for i, row in enumerate(st.session_state.lookup_rows):
+        c1, c2, c3, c4 = st.columns([3, 3, 2, 1.2])
+        c1.text_input("First Name", key=f"fname_{i}", label_visibility="collapsed", placeholder="John")
+        c2.text_input("Last Name",  key=f"lname_{i}", label_visibility="collapsed", placeholder="Doe")
+        c3.text_input("SSN",        key=f"ssn_{i}",   label_visibility="collapsed", placeholder="XXX-XX-XXXX")
 
-        if errors:
-            for e in errors:
-                st.error(e)
-        else:
-            with st.spinner("Fetching from OpenDental API…"):
-                try:
-                    results = fetch_patient(fname.strip(), lname.strip())
-                except Exception as e:
-                    st.error(f"API error: {e}")
-                    results = None
+        if c4.button("Look Up", key=f"lookup_{i}", use_container_width=True):
+            _do_lookup(i)
 
-            if results is None:
-                pass  # error already shown
-            elif len(results) == 0:
-                st.warning(f"No patient found for **{fname.strip()} {lname.strip()}**.")
-            else:
-                # Use first match; merge user-supplied SSN if API returned none
-                patient_data = results[0]
-                if not patient_data.get("SSN") and ssn.strip():
-                    patient_data["SSN"] = ssn.strip()
+        if row["status"] == "saved":
+            st.success(row["message"])
+        elif row["status"] == "exists":
+            st.warning(row["message"])
+        elif row["status"] == "error":
+            st.error(row["message"])
+        elif row["status"] == "not_found":
+            st.warning(row["message"])
 
-                record = create_patient(
-                    pat_num      = patient_data.get("PatNum",""),  
-                    fname        = patient_data.get("FName", fname.strip()),
-                    lname        = patient_data.get("LName", lname.strip()),
-                    ssn          = patient_data.get("SSN", ssn.strip()),
-                    middle_i     = patient_data.get("MiddleI", ""),
-                    birthdate    = patient_data.get("Birthdate", ""),
-                    hm_phone     = patient_data.get("HmPhone", ""),
-                    address      = patient_data.get("Address", ""),
-                    city         = patient_data.get("City", ""),
-                    state        = patient_data.get("State", ""),
-                    zip_code     = patient_data.get("Zip", ""),
-                    email        = patient_data.get("Email", ""),
-                    pri_prov_abbr= patient_data.get("priProvAbbr", ""),
-                    pat_status   = patient_data.get("PatStatus", "Patient"),
-                    billing_type = patient_data.get("BillingType", "Standard Account"),
-                )
-
-                if "session_pat_nums" not in st.session_state:
-                    st.session_state.session_pat_nums = []
-                st.session_state.session_pat_nums.append(record["PatNum"])
-
-                st.success(
-                    f"Saved — **{record['FName']} {record['LName']}** "
-                    f"(Patient ID: {record['PatNum']})"
-                )
-
-                # Show what was pulled from the API
-                with st.expander("Record saved to database", expanded=False):
-                    st.json(patient_data)
-
-                if len(results) > 1:
-                    st.info(
-                        f"{len(results)} matches found — saved the first result. "
-                        "Refine the name if a different patient was intended."
-                    )
+    st.markdown("")
+    if st.button("+ Add Patient"):
+        st.session_state.lookup_rows.append({"status": None, "message": ""})
+        st.rerun()
 
     # ── Navigation ────────────────────────────────────────────────────────────
     st.markdown("---")

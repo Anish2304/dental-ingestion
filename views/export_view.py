@@ -1,8 +1,7 @@
 import pandas as pd
 import streamlit as st
-from db.crud import get_session_patients, get_patients_by_ids, log_audit
-from ingest import ingest_handler
-from pw import ingest_handler_pw
+from db.crud import get_all_patients, get_all_patients_full, delete_patients_by_ids, log_audit
+from pw import ingest_handler
 
 PAGE_SIZE = 10
 
@@ -28,7 +27,7 @@ def render():
                 Patient Export
             </h1>
             <p style="margin: 0.25rem 0 0 0; color: grey; font-size: 0.95rem;">
-                Select records added this session and ingest them.
+                Select records from the database and ingest them.
             </p>
         </div>
         """,
@@ -41,14 +40,12 @@ def render():
     if "checked_ids" not in st.session_state:
         st.session_state.checked_ids = set()
 
-    session_ids = st.session_state.get("session_pat_nums", [])
-    records, total = get_session_patients(session_ids, st.session_state.export_page, PAGE_SIZE)
+    records, total = get_all_patients(st.session_state.export_page, PAGE_SIZE)
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
 
     if not records:
-        st.info("No patients added this session. Go back and add some.")
+        st.info("No patients in the database. Go back and add some.")
     else:
-        # ── Table (render first so sync runs before we read checked_ids) ────
         df = pd.DataFrame(records)[list(COL_LABELS.keys())]
         df.insert(0, "Select", [r["PatNum"] in st.session_state.checked_ids for r in records])
 
@@ -66,7 +63,6 @@ def render():
             key=f"table_page_{st.session_state.export_page}",
         )
 
-        # Sync checkbox state back immediately — must happen before any count read
         for _, row in edited.iterrows():
             pat_num = int(row["PatNum"])
             if row["Select"]:
@@ -100,16 +96,14 @@ def render():
 
     st.markdown("---")
 
-    # ── Metrics — read AFTER sync so counts are accurate ────────────────────
     selected = sorted(st.session_state.checked_ids)
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total This Session", len(session_ids))
+    m1.metric("Total in Database", total if records else 0)
     m2.metric("Selected for Ingest", len(selected))
     m3.metric("Page", f"{st.session_state.export_page} / {total_pages}")
 
     st.markdown("")
 
-    # ── Ingest action ────────────────────────────────────────────────────────
     bc1, bc2 = st.columns([3, 1])
     with bc1:
         if selected:
@@ -124,20 +118,15 @@ def render():
         )
 
     if ingest_clicked:
-        full_records = get_patients_by_ids(selected)
+        full_records = get_all_patients_full()
+        full_records = [r for r in full_records if r["PatNum"] in selected]
         log_audit("INGEST", None, {"ingested_ids": selected, "count": len(selected)})
         output = ingest_handler(full_records)
-        # ingest_handler_pw(full_records)
-        # from patient_db_writer import write_ingested_patients
-        # write_ingested_patients(full_records)
-        st.success(f"Successfully ingested {len(full_records)} patient(s).")
+        delete_patients_by_ids(selected)
+        st.success(f"Successfully ingested and removed {len(full_records)} patient(s).")
         with st.expander("JSON sent to ingest module", expanded=True):
             st.code(output, language="json")
         st.session_state.checked_ids.clear()
-        st.session_state.session_pat_nums = [
-            p for p in st.session_state.get("session_pat_nums", [])
-            if p not in selected
-        ]
         st.session_state.export_page = 1
 
     st.markdown("---")

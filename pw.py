@@ -1,180 +1,80 @@
-# from playwright.sync_api import sync_playwright
- 
-# HTML_PATH = "frontend.html"
-# STREAMLIT_URL = "http://localhost:8501"
-# API_KEYWORD = "/data"   # 🔁 change if your endpoint differs
- 
-# def normalize_payload(payload):
-#     # Always return list
-#     if isinstance(payload, list):
-#         return payload
-#     elif isinstance(payload, dict):
-#         return [payload]
-#     return []
- 
-# with sync_playwright() as p:
-#     browser = p.chromium.launch(headless=False)
-#     context = browser.new_context()
- 
-#     # ✅ Open your HTML UI
-#     ui_page = context.new_page()
-#     ui_page.goto(HTML_PATH)
-#     ui_page.wait_for_selector("#patientsTbody")
- 
-#     # ❗ IMPORTANT: Disable API auto-load in your HTML
-#     ui_page.evaluate("window.loadPatients = () => {};")
- 
-#     # ✅ Open Streamlit inside SAME context
-#     streamlit_page = context.new_page()
-#     streamlit_page.goto(STREAMLIT_URL)
- 
-#     print("👂 Listening for Streamlit API calls...")
- 
-#     def handle_request(request):
-#         try:
-#             if API_KEYWORD in request.url and request.method == "POST":
-#                 payload = request.post_data_json
-#                 data = normalize_payload(payload)
- 
-#                 print("🚀 New data received:", data)
- 
-#                 # ✅ Inject into YOUR HTML structure
-#                 ui_page.evaluate(
-#                     """(data) => {
- 
-#                         // Replace existing dataset
-#                         window.allPatients = data;
-#                         window.filtered = [...data];
-#                         window.currentPage = 1;
- 
-#                         // Re-render table using your existing function
-#                         if (typeof renderTable === 'function') {
-#                             renderTable();
-#                         }
- 
-#                     }""",
-#                     data
-#                 )
- 
-#         except Exception as e:
-#             print("❌ Error:", e)
- 
-#     # 🔥 Listen at CONTEXT level (important)
-#     context.on("request", handle_request)
- 
-#     print("👉 Click 'Inject Data' in Streamlit")
- 
-#     streamlit_page.wait_for_timeout(0)
-
-# import os
-# from playwright.sync_api import sync_playwright
-
-# # ✅ Convert local HTML file to proper file:// URL
-# HTML_PATH = f"file:///{os.path.abspath('frontend.html')}"
-# STREAMLIT_URL = "http://localhost:8501"
-# API_KEYWORD = "/data"   # 🔁 change if your endpoint differs
-
-
-# def normalize_payload(payload):
-#     # Always return list
-#     if isinstance(payload, list):
-#         return payload
-#     elif isinstance(payload, dict):
-#         return [payload]
-#     return []
-
-
-# with sync_playwright() as p:
-#     browser = p.chromium.launch(headless=False)
-#     context = browser.new_context()
-
-#     # ✅ Open your HTML UI
-#     ui_page = context.new_page()
-#     ui_page.goto(HTML_PATH)
-#     ui_page.wait_for_selector("#patientsTbody")
-
-#     # ❗ Disable auto API call if your HTML does it
-#     ui_page.evaluate("window.loadPatients = () => {};")
-
-#     # ✅ Open Streamlit in same browser context
-#     streamlit_page = context.new_page()
-#     streamlit_page.goto(STREAMLIT_URL)
-
-#     print("👂 Listening for Streamlit API calls...")
-
-#     def handle_request(request):
-#         try:
-#             if API_KEYWORD in request.url and request.method == "POST":
-                
-#                 # ✅ Safely parse payload
-#                 payload = request.post_data_json
-#                 data = normalize_payload(payload)
-
-#                 print("🚀 New data received:", data)
-
-#                 # ✅ Inject into HTML page
-#                 ui_page.evaluate(
-#                     """(data) => {
-#                         window.allPatients = data;
-#                         window.filtered = [...data];
-#                         window.currentPage = 1;
-
-#                         if (typeof renderTable === 'function') {
-#                             renderTable();
-#                         }
-#                     }""",
-#                     data
-#                 )
-
-#         except Exception as e:
-#             print("❌ Error handling request:", e)
-
-#     # 🔥 Listen at CONTEXT level (important)
-#     context.on("request", handle_request)
-
-#     print("👉 Click 'Inject Data' in Streamlit")
-
-#     # ✅ Keep script alive
-#     input("Press ENTER to exit...")
-
-
 import json
 import os
 from playwright.sync_api import sync_playwright
 
 HTML_PATH = f"file:///{os.path.abspath('frontend.html')}"
+# HTML_PATH = "frontend.html"
 
+def fill_patient_form(page, p):
 
+    # Click Add Patient button properly
+    add_btn = page.get_by_role("button", name="+ Add New Patient")
+    add_btn.wait_for(state="visible")
+    add_btn.click()
+
+    # Wait for form to be visible
+    page.wait_for_selector("#f_fname", state="visible")
+
+    # Fill form
+    page.fill("#f_fname", p.get("FName", ""))
+    page.fill("#f_lname", p.get("LName", ""))
+    page.fill("#f_dob", p.get("Birthdate", ""))
+    page.fill("#f_ssn", p.get("SSN", ""))
+    page.fill("#f_phone", p.get("HmPhone", ""))
+    page.fill("#f_prov", p.get("priProvAbbr", ""))
+    page.fill("#f_address", p.get("Address", ""))
+    page.fill("#f_city", p.get("City", ""))
+    page.fill("#f_state", p.get("State", ""))
+    page.fill("#f_zip", p.get("Zip", ""))
+    page.fill("#f_email", p.get("Email", ""))
+
+    # Click Save
+    save_btn = page.get_by_role("button", name="Save Patient")
+    save_btn.click()
+
+    # Wait for modal to close (overlay loses 'open' class, f_fname stays in DOM)
+    page.wait_for_function("!document.getElementById('addModal').classList.contains('open')")
+
+    print(f"✅ Saved: {p.get('FName')} {p.get('LName')}")
+
+# ---------------- PLAYWRIGHT RUNNER ----------------
 def inject_into_ui(data):
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(
+            headless=True,
+            slow_mo=50  # helps debugging timing issues
+            )
         context = browser.new_context()
 
         page = context.new_page()
         page.goto(HTML_PATH)
-        page.wait_for_selector("#patientsTbody")
+        page.get_by_role("button", name="+ Add New Patient").wait_for(state="visible")
+        # page.wait_for_timeout(2000)
+        # page.wait_for_selector("#patientsTbody")
 
-        # Inject data into UI
-        page.evaluate(
-            """(data) => {
-                window.allPatients = data;
-                window.filtered = [...data];
-                window.currentPage = 1;
+        print("🚀 Starting form automation...")
 
-                if (typeof renderTable === 'function') {
-                    renderTable();
-                }
-            }""",
-            data
-        )
+        # 🔥 REAL UI ACTION LOOP
+        for record in data:
+            fill_patient_form(page, record)
 
-        print("✅ Data injected into UI")
+        print("✅ All patients inserted")
 
-        # Keep browser open for 5 minutes, then close
-        page.wait_for_timeout(300_000)
         browser.close()
 
 
-def ingest_handler_pw(records: list[dict]) -> str:
+# ---------------- INGEST HANDLER ----------------
+def ingest_handler(records: list[dict]) -> str:
+
+    output = json.dumps(records, indent=2)
+    print(output)
+
+    # 🔥 Trigger Playwright automation
     inject_into_ui(records)
+
+    return output
+ 
+
+
 
