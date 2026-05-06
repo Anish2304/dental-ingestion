@@ -128,8 +128,8 @@ def render():
         log_audit("INGEST", None, {"ingested_ids": selected, "count": len(selected)})
         output = ingest_handler(full_records)
         # ingest_handler_pw(full_records)
-        from patient_db_writer import write_ingested_patients
-        write_ingested_patients(full_records)
+        # from patient_db_writer import write_ingested_patients
+        # write_ingested_patients(full_records)
         st.success(f"Successfully ingested {len(full_records)} patient(s).")
         with st.expander("JSON sent to ingest module", expanded=True):
             st.code(output, language="json")
