@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 from db.crud import get_all_patients, get_all_patients_full, delete_patients_by_ids, log_audit
-from pw import ingest_handler
+from services.ingest import ingest_handler
 
 PAGE_SIZE = 10
 

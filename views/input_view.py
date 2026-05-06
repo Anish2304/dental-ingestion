@@ -1,5 +1,5 @@
 import streamlit as st
-from api_client import fetch_patient
+from services.api_client import fetch_patient
 from db.crud import create_patient, check_patient_exists
 
 
