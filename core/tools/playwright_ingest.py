@@ -1,15 +1,23 @@
-import json
 import os
-from playwright.sync_api import sync_playwright
-from config import FRONTEND_URL
 import asyncio
 import sys
+from playwright.sync_api import sync_playwright
+from config import FRONTEND_URL
+from utils import logger
+
+log = logger.get("tools.playwright_ingest")
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+HTML_PATH = f"file:///{os.path.abspath(os.path.join(_STATIC_DIR, 'frontend.html'))}"
+
 
 def _fill_patient_form(page, p: dict):
+    patient_ref = f"{p.get('FName')} {p.get('LName')}"
+    log.debug("Filling form for: %s", patient_ref)
+
     add_btn = page.get_by_role("button", name="+ Add New Patient")
     add_btn.wait_for(state="visible")
     add_btn.click()
@@ -31,34 +39,32 @@ def _fill_patient_form(page, p: dict):
     page.get_by_role("button", name="Save Patient").click()
     page.wait_for_function("!document.getElementById('addModal').classList.contains('open')")
 
-    print(f"Saved: {p.get('FName')} {p.get('LName')}")
+    log.info("Form submitted for: %s", patient_ref)
 
 
 def _inject_into_ui(records: list[dict]):
-    if not FRONTEND_URL:
-        raise RuntimeError("FRONTEND_URL is not set in environment.")
+    target =  HTML_PATH
+    # target = FRONTEND_URL if FRONTEND_URL else
+    log.info("Launching Playwright for %d record(s) → %s", len(records), target)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, slow_mo=50)
         context = browser.new_context()
         page = context.new_page()
 
-        # Log all browser console output and errors
-        page.on("console", lambda msg: print(f"[browser {msg.type}] {msg.text}"))
-        page.on("pageerror", lambda err: print(f"[browser error] {err}"))
-        page.on("requestfailed", lambda req: print(f"[request failed] {req.url} - {req.failure}"))
+        page.on("console", lambda msg: log.debug("[browser %s] %s", msg.type, msg.text))
+        page.on("pageerror", lambda err: log.error("[browser error] %s", err))
+        page.on("requestfailed", lambda req: log.warning("[request failed] %s — %s", req.url, req.failure))
 
-        page.add_init_script("""
-            window._API_OVERRIDE = 'http://host.docker.internal:5000/api';
-        """)
-
-        page.goto(FRONTEND_URL)
+        page.goto(target)
         page.get_by_role("button", name="+ Add New Patient").wait_for(state="visible")
 
         for record in records:
             _fill_patient_form(page, record)
 
         browser.close()
+
+    log.info("Playwright ingest finished — %d record(s) submitted", len(records))
 
 
 def ingest_handler(records: list[dict]) -> None:

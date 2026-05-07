@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 from db.crud import get_all_patients, get_all_patients_full, delete_patients_by_ids, log_audit
-from services.ingest import ingest_handler
+from core.agents import supervisor
 
 PAGE_SIZE = 10
 
@@ -57,7 +57,7 @@ def render():
         edited = st.data_editor(
             df,
             column_config=column_config,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             disabled=list(COL_LABELS.keys()),
             key=f"table_page_{st.session_state.export_page}",
@@ -74,7 +74,7 @@ def render():
         st.markdown("")
         pcol1, pcol2, pcol3 = st.columns([1, 4, 1])
         with pcol1:
-            if st.button("← Previous", use_container_width=True,
+            if st.button("← Previous", width='stretch',
                          disabled=st.session_state.export_page <= 1):
                 st.session_state.export_page -= 1
                 st.rerun()
@@ -89,7 +89,7 @@ def render():
                 st.session_state.export_page = chosen
                 st.rerun()
         with pcol3:
-            if st.button("Next →", use_container_width=True,
+            if st.button("Next →", width='stretch',
                          disabled=st.session_state.export_page >= total_pages):
                 st.session_state.export_page += 1
                 st.rerun()
@@ -114,20 +114,21 @@ def render():
         ingest_clicked = st.button(
             "Ingest Selected", type="primary",
             disabled=len(selected) == 0,
-            use_container_width=True,
+            width="stretch",
         )
 
     if ingest_clicked:
         full_records = get_all_patients_full()
         full_records = [r for r in full_records if r["PatNum"] in selected]
         log_audit("INGEST", None, {"ingested_ids": selected, "count": len(selected)})
-        ingest_handler(full_records)
-        delete_patients_by_ids(selected)
-        st.success(f"Successfully ingested and removed {len(full_records)} patient(s).")
-        # with st.expander("JSON sent to ingest module", expanded=True):
-        #     st.code(output, language="json")
-        st.session_state.checked_ids.clear()
-        st.session_state.export_page = 1
+        result = supervisor.ingest(full_records)
+        if result["status"] == "error":
+            st.error(result["message"])
+        else:
+            delete_patients_by_ids(selected)
+            st.success(result["message"])
+            st.session_state.checked_ids.clear()
+            st.session_state.export_page = 1
 
     st.markdown("---")
     if st.button("← Back to Input"):

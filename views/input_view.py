@@ -1,5 +1,5 @@
 import streamlit as st
-from services.api_client import fetch_patient
+from core.agents import supervisor
 from db.crud import create_patient, check_patient_exists
 
 
@@ -25,19 +25,13 @@ def _do_lookup(i: int):
         )
         return
 
-    try:
-        results = fetch_patient(fname, lname)
-    except Exception as e:
-        st.session_state.lookup_rows[i]["status"]  = "error"
-        st.session_state.lookup_rows[i]["message"] = f"API error: {e}"
+    result = supervisor.lookup(fname, lname, ssn)
+    if result["status"] == "error":
+        st.session_state.lookup_rows[i]["status"]  = "not_found" if "No patient" in result["message"] else "error"
+        st.session_state.lookup_rows[i]["message"] = result["message"]
         return
 
-    if not results:
-        st.session_state.lookup_rows[i]["status"]  = "not_found"
-        st.session_state.lookup_rows[i]["message"] = f"No patient found for {fname} {lname}."
-        return
-
-    patient_data = results[0]
+    patient_data = result["data"]
     if not patient_data.get("SSN") and ssn:
         patient_data["SSN"] = ssn
 
@@ -126,7 +120,7 @@ def render():
         c2.text_input("Last Name",  key=f"lname_{i}", label_visibility="collapsed", placeholder="Doe")
         c3.text_input("SSN",        key=f"ssn_{i}",   label_visibility="collapsed", placeholder="XXX-XX-XXXX")
 
-        if c4.button("Look Up", key=f"lookup_{i}", use_container_width=True):
+        if c4.button("Look Up", key=f"lookup_{i}", width="stretch"):
             _do_lookup(i)
 
         status = row["status"]
@@ -151,6 +145,6 @@ def render():
     st.markdown("---")
     _, nav_col = st.columns([3, 1])
     with nav_col:
-        if st.button("View Export →", type="secondary", use_container_width=True):
+        if st.button("View Export →", type="secondary", width='stretch'):
             st.session_state.page = "export"
             st.rerun()

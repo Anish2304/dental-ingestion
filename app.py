@@ -1,6 +1,9 @@
 import streamlit as st
+from utils import logger
 from db.database import init_db
 from views import export_view, input_view
+
+logger.setup()
 
 st.set_page_config(
     page_title="DocuDent AI",
