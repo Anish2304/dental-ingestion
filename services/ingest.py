@@ -36,13 +36,23 @@ def _fill_patient_form(page, p: dict):
 
 def _inject_into_ui(records: list[dict]):
     if not FRONTEND_URL:
-        raise RuntimeError("FRONTEND_URL is not set in environment. Cannot run Playwright ingest.")
+        raise RuntimeError("FRONTEND_URL is not set in environment.")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, slow_mo=50)
-        page = browser.new_context().new_page()
+        context = browser.new_context()
+        page = context.new_page()
+
+        # Log all browser console output and errors
+        page.on("console", lambda msg: print(f"[browser {msg.type}] {msg.text}"))
+        page.on("pageerror", lambda err: print(f"[browser error] {err}"))
+        page.on("requestfailed", lambda req: print(f"[request failed] {req.url} - {req.failure}"))
+
+        page.add_init_script("""
+            window._API_OVERRIDE = 'http://host.docker.internal:5000/api';
+        """)
+
         page.goto(FRONTEND_URL)
-        # page.goto(f"file:///{os.path.abspath('frontend.html')}")
         page.get_by_role("button", name="+ Add New Patient").wait_for(state="visible")
 
         for record in records:
