@@ -12,7 +12,10 @@ _llm = ChatGroq(model="llama-3.3-70b-versatile")
 _PROMPT = (
     "You are an API agent for a dental records system. "
     "Use fetch_patient to retrieve patient data. "
-    "Check the result has non-empty FName, LName, and PatNum. "
+    "The API performs partial, case-insensitive matching — returned names will not exactly match the query. "
+    "Your only job is to check that every returned record has non-empty FName, LName, and PatNum. "
+    "Do NOT compare query names to returned names. "
+    "Approve if at least one valid record is returned, reject only if the list is empty or all records are missing required fields. "
     'Respond ONLY with JSON: {"approved": bool, "reason": <string>}'
 )
 
@@ -27,11 +30,11 @@ async def run(fname: str, lname: str) -> dict:
     _raw: list[dict] = []
 
     @tool
-    def fetch_patient(fname: str, lname: str) -> str:
+    async def fetch_patient(fname: str, lname: str) -> str:
         """Query the OpenDental API for a patient by first and last name."""
         log.debug("Tool fetch_patient called: fname=%s lname=%s", fname, lname)
         try:
-            results = _fetch_patient(fname, lname)
+            results = await _fetch_patient(fname, lname)
             _raw.extend(results)
             summary = [
                 {"FName": r.get("FName"), "LName": r.get("LName"), "PatNum": r.get("PatNum")}
@@ -63,10 +66,10 @@ async def run(fname: str, lname: str) -> dict:
         decision = {"approved": False, "reason": last}
 
     if decision.get("approved") and _raw:
-        decision["data"] = _raw[0]
-        log.info("api_agent approved patient %s %s (PatNum=%s)", fname, lname, _raw[0].get("PatNum"))
-    elif not decision.get("approved"):
+        decision["data"] = _raw
+        log.info("api_agent approved %d record(s) for %s %s", len(_raw), fname, lname)
+    else:
         log.warning("api_agent rejected lookup for %s %s: %s", fname, lname, decision.get("reason"))
-        decision["data"] = None
+        decision["data"] = []
 
     return decision

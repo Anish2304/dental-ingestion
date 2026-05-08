@@ -1,4 +1,4 @@
-import requests
+import httpx
 from config import OPENDENTAL_API_KEY, OPENDENTAL_BASE_URL
 from db.models import PATIENT_FIELDS, FIELD_MAP
 from utils import logger
@@ -7,7 +7,6 @@ log = logger.get("tools.opendental")
 
 
 def _normalize_record(record: dict, patient_ref: str) -> dict:
-    """Map API response fields to canonical names and fill missing fields with defaults."""
     normalized: dict = {}
 
     for api_key, value in record.items():
@@ -25,25 +24,25 @@ def _normalize_record(record: dict, patient_ref: str) -> dict:
     return normalized
 
 
-def fetch_patient(fname: str, lname: str) -> list[dict]:
+async def fetch_patient(fname: str, lname: str) -> list[dict]:
     patient_ref = f"{fname} {lname}"
     log.info("Fetching patient from OpenDental API: %s", patient_ref)
 
     try:
-        resp = requests.get(
-            f"{OPENDENTAL_BASE_URL}/patients/Simple",
-            params={"FName": fname, "LName": lname},
-            headers={"Authorization": f"ODFHIR {OPENDENTAL_API_KEY}"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-    except requests.exceptions.Timeout:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{OPENDENTAL_BASE_URL}/patients/Simple",
+                params={"FName": fname, "LName": lname},
+                headers={"Authorization": f"ODFHIR {OPENDENTAL_API_KEY}"},
+            )
+            resp.raise_for_status()
+    except httpx.TimeoutException:
         log.error("API request timed out for %s", patient_ref)
         raise
-    except requests.exceptions.HTTPError as e:
+    except httpx.HTTPStatusError as e:
         log.error("API HTTP error for %s: %s %s", patient_ref, e.response.status_code, e.response.text)
         raise
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         log.error("API request failed for %s: %s", patient_ref, e)
         raise
 

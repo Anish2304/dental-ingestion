@@ -4,6 +4,39 @@ from db.crud import create_patient, check_patient_exists
 
 
 
+def _save_patient(i: int, patient_data: dict, ssn: str):
+    if not patient_data.get("SSN") and ssn:
+        patient_data["SSN"] = ssn
+
+    record = create_patient(
+        pat_num       = patient_data.get("PatNum", ""),
+        fname         = patient_data.get("FName", ""),
+        lname         = patient_data.get("LName", ""),
+        ssn           = patient_data.get("SSN", ssn),
+        middle_i      = patient_data.get("MiddleI", ""),
+        birthdate     = patient_data.get("Birthdate", ""),
+        hm_phone      = patient_data.get("HmPhone", ""),
+        address       = patient_data.get("Address", ""),
+        city          = patient_data.get("City", ""),
+        state         = patient_data.get("State", ""),
+        zip_code      = patient_data.get("Zip", ""),
+        email         = patient_data.get("Email", ""),
+        pri_prov_abbr = patient_data.get("priProvAbbr", ""),
+        pat_status    = patient_data.get("PatStatus", "Patient"),
+        billing_type  = patient_data.get("BillingType", "Standard Account"),
+    )
+
+    if "session_pat_nums" not in st.session_state:
+        st.session_state.session_pat_nums = []
+    st.session_state.session_pat_nums.append(record["PatNum"])
+
+    st.session_state.lookup_rows[i]["status"]     = "saved"
+    st.session_state.lookup_rows[i]["message"]    = (
+        f"Saved — **{record['FName']} {record['LName']}** (Patient ID: {record['PatNum']})"
+    )
+    st.session_state.lookup_rows[i]["candidates"] = []
+
+
 def _do_lookup(i: int):
     fname = st.session_state.get(f"fname_{i}", "").strip()
     lname = st.session_state.get(f"lname_{i}", "").strip()
@@ -31,36 +64,16 @@ def _do_lookup(i: int):
         st.session_state.lookup_rows[i]["message"] = result["message"]
         return
 
-    patient_data = result["data"]
-    if not patient_data.get("SSN") and ssn:
-        patient_data["SSN"] = ssn
+    data = result["data"]
 
-    record = create_patient(
-        pat_num       = patient_data.get("PatNum", ""),
-        fname         = patient_data.get("FName", fname),
-        lname         = patient_data.get("LName", lname),
-        ssn           = patient_data.get("SSN", ssn),
-        middle_i      = patient_data.get("MiddleI", ""),
-        birthdate     = patient_data.get("Birthdate", ""),
-        hm_phone      = patient_data.get("HmPhone", ""),
-        address       = patient_data.get("Address", ""),
-        city          = patient_data.get("City", ""),
-        state         = patient_data.get("State", ""),
-        zip_code      = patient_data.get("Zip", ""),
-        email         = patient_data.get("Email", ""),
-        pri_prov_abbr = patient_data.get("priProvAbbr", ""),
-        pat_status    = patient_data.get("PatStatus", "Patient"),
-        billing_type  = patient_data.get("BillingType", "Standard Account"),
-    )
+    if result.get("multiple"):
+        st.session_state.lookup_rows[i]["status"]     = "multiple"
+        st.session_state.lookup_rows[i]["candidates"] = data
+        st.session_state.lookup_rows[i]["ssn"]        = ssn
+        st.session_state.lookup_rows[i]["message"]    = f"{len(data)} patients found — select the correct one."
+        return
 
-    if "session_pat_nums" not in st.session_state:
-        st.session_state.session_pat_nums = []
-    st.session_state.session_pat_nums.append(record["PatNum"])
-
-    st.session_state.lookup_rows[i]["status"]  = "saved"
-    st.session_state.lookup_rows[i]["message"] = (
-        f"Saved — **{record['FName']} {record['LName']}** (Patient ID: {record['PatNum']})"
-    )
+    _save_patient(i, data[0], ssn)
 
 
 def render():
@@ -130,6 +143,19 @@ def render():
                 "font-family:\"DM Sans\",sans-serif;'>&#10003; Saved successfully</p>",
                 unsafe_allow_html=True,
             )
+        elif status == "multiple":
+            candidates = row.get("candidates", [])
+            st.warning(row["message"])
+            options = {
+                f"{c['FName']} {c['LName']} — ID: {c['PatNum']}, DOB: {c.get('Birthdate') or '—'}, Phone: {c.get('HmPhone') or '—'}": c
+                for c in candidates
+            }
+            selected_label = st.selectbox(
+                "Select patient:", list(options.keys()), key=f"select_{i}"
+            )
+            if st.button("Save Selected", key=f"save_select_{i}"):
+                _save_patient(i, options[selected_label], row.get("ssn", ""))
+                st.rerun()
         elif status in ("exists", "not_found"):
             st.warning(row["message"])
         elif status == "error":

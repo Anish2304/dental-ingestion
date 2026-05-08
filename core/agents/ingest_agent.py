@@ -21,7 +21,7 @@ async def run(records: list[dict]) -> dict:
     log.info("ingest_agent.run called with %d record(s)", len(records))
 
     @tool
-    def ingest_patients(confirmed: bool) -> str:
+    async def ingest_patients(confirmed: bool) -> str:
         """Trigger Playwright to submit patient records into the dental frontend. Only call if all records have FName and LName."""
         log.debug("Tool ingest_patients called with confirmed=%s", confirmed)
         if not confirmed:
@@ -29,7 +29,7 @@ async def run(records: list[dict]) -> dict:
             return json.dumps({"error": "Validation failed — not confirmed."})
         try:
             log.info("Triggering Playwright ingest for %d record(s)", len(records))
-            _ingest_handler(records)
+            await _ingest_handler(records)
             log.info("Playwright ingest completed successfully for %d record(s)", len(records))
             return json.dumps({"status": "success"})
         except Exception as e:
